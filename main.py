@@ -1,10 +1,13 @@
-from flask import Flask, request, send_file
+from flask import Flask, request, send_file, after_this_request
 import yt_dlp
 import os
 import uuid
 
 app = Flask(__name__)
 
+@app.get('/')
+def home():
+    return {"type": "success", "message": "Welcome on downloader API"}
 
 @app.get('/download')
 def download():
@@ -12,7 +15,7 @@ def download():
     quality = request.args.get('quality', 'best')  
     
     if not url:
-        return "URL manquante", 400
+        return {"error": "URL is required"}, 400
 
     filename = f"/tmp/{uuid.uuid4()}.mp4"
 
@@ -40,10 +43,20 @@ def download():
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
+
+        @after_this_request
+        def cleanup(response):
+            try:
+                if os.path.exists(filename):
+                    os.remove(filename)
+            except Exception as e:
+                app.logger.error(f"Error deleting file: {e}")
+            return response
+
         return send_file(filename, as_attachment=True)
-    finally:
-        if os.path.exists(filename):
-            os.remove(filename)
+
+    except Exception as e:
+        return {"error": str(e)}, 500
 
 
 if __name__ == '__main__':
