@@ -1,16 +1,17 @@
 import uvicorn
-from fastapi import FastAPI, Query, BackgroundTasks, HTTPException
+from fastapi import FastAPI, Query, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import yt_dlp
 import os
 import uuid
+import shutil
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -18,46 +19,26 @@ app.add_middleware(
 
 download_status = {}
 
-def download_video(url: str, format_str: str, download_id: str):
-    filename = f"/tmp/{download_id}.mp4"
-
-    def progress_hook(d):
-        if d["status"] == "downloading":
-            percent = d.get("_percent_str", "0%").replace("%", "").strip()
-            try:
-                download_status[download_id] = {
-                    "progress": float(percent),
-                    "status": "Downloading...",
-                }
-            except ValueError:
-                pass
-        elif d["status"] == "finished":
-            download_status[download_id] = {"progress": 100.0, "status": "Finished"}
-
-    ydl_opts = {
-        "format": format_str,
-        "merge_output_format": "mp4",
-        "outtmpl": filename,
-        "progress_hooks": [progress_hook],
-        "quiet": True,
-    }
-
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-    except Exception as e:
-        download_status[download_id] = {"progress": 0, "status": f"Error: {str(e)}"}
-
 @app.get("/")
 def home():
     return {"type": "success", "message": "Welcome on downloader API"}
 
-@app.get("/download")
-def start_download(
+@app.get("/progress")
+def get_progress(id: str = Query(...)):
+    if id not in download_status:
+        return {"progress": 0, "status": "Initializing"}
+    return download_status[id]
+
+@app.post("/download")
+async def download(
     url: str = Query(...),
     quality: str = Query("best"),
-    background_tasks: BackgroundTasks = None
+    id: str = Query(None),
+    cookiefile: UploadFile = File(None),
 ):
+    download_id = id or str(uuid.uuid4())
+    filename = f"/tmp/{download_id}.mp4"
+
     format_map = {
         "audio": "bestaudio",
         "video": "bestvideo",
@@ -71,33 +52,48 @@ def start_download(
     }
 
     selected_format = format_map.get(quality.lower(), "best")
-    download_id = str(uuid.uuid4())
-    download_status[download_id] = {"progress": 0, "status": "Starting"}
 
-    background_tasks.add_task(download_video, url, selected_format, download_id)
-    return {"download_id": download_id, "message": "Download started"}
+    cookie_path = None
+    if cookiefile is not None:
+        cookie_path = f"/tmp/{download_id}_cookies.txt"
+        with open(cookie_path, "wb") as f:
+            shutil.copyfileobj(cookiefile.file, f)
 
-@app.get("/progress")
-def get_progress(id: str = Query(...)):
-    return download_status.get(id, {"progress": 0, "status": "Not found"})
+    def progress_hook(d):
+        if d["status"] == "downloading":
+            percent = d.get("_percent_str", "0%").replace("%", "").strip()
+            try:
+                download_status[download_id] = {
+                    "progress": float(percent),
+                    "status": "Downloading...",
+                }
+            except ValueError:
+                pass
+        elif d["status"] == "finished":
+            download_status[download_id] = {"progress": 100.0, "status": "Processing..."}
 
-@app.get("/file")
-def get_file(id: str = Query(...)):
-    filename = f"/tmp/{id}.mp4"
-    if os.path.exists(filename):
-        return FileResponse(filename, filename="video.mp4", media_type="video/mp4")
-    else:
-        raise HTTPException(status_code=404, detail="File not found")
+    ydl_opts = {
+        "format": selected_format,
+        "merge_output_format": "mp4",
+        "outtmpl": filename,
+        "progress_hooks": [progress_hook],
+        "quiet": True,
+    }
 
-@app.delete("/file")
-def delete_file(id: str = Query(...)):
-    filename = f"/tmp/{id}.mp4"
-    if os.path.exists(filename):
-        os.remove(filename)
-        download_status.pop(id, None)
-        return {"message": "File deleted"}
-    else:
-        raise HTTPException(status_code=404, detail="File not found")
+    if cookie_path:
+        ydl_opts["cookiefile"] = cookie_path
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+        return FileResponse(path=filename, filename="video.mp4", media_type="video/mp4")
+    finally:
+        if os.path.exists(filename):
+            os.remove(filename)
+        if cookie_path and os.path.exists(cookie_path):
+            os.remove(cookie_path)
+        if download_id in download_status:
+            del download_status[download_id]
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=5000, reload=True)
