@@ -124,4 +124,5 @@ async def get_file(id: str = Query(...), background_tasks: BackgroundTasks = Non
     return FileResponse(filepath, filename="video.mp4", media_type="video/mp4")
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=5000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=5000)
+
