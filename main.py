@@ -25,16 +25,17 @@ def download_video_task(url, quality, download_id, cookie_path=None):
     base_filename = f"/tmp/{download_id}"
 
     format_map = {
-        "audio": "bestaudio",
-        "video": "bestvideo",
-        "audio+video": "bestvideo+bestaudio/best",
-        "360p": "bestvideo[height<=360]+bestaudio/best[height<=360]",
-        "480p": "bestvideo[height<=480]+bestaudio/best[height<=480]",
-        "720p": "bestvideo[height<=720]+bestaudio/best[height<=720]",
-        "1080p": "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
-        "1440p": "bestvideo[height<=1440]+bestaudio/best[height<=1440]",
-        "2160p": "bestvideo[height<=2160]+bestaudio/best[height<=2160]",
+        "audio": "bestaudio[ext=m4a]/bestaudio",
+        "video": "bestvideo[ext=mp4]/bestvideo",
+        "audio+video": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best",
+        "360p": "bestvideo[ext=mp4][height<=360]+bestaudio[ext=m4a]/best[height<=360]",
+        "480p": "bestvideo[ext=mp4][height<=480]+bestaudio[ext=m4a]/best[height<=480]",
+        "720p": "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[height<=720]",
+        "1080p": "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[height<=1080]",
+        "1440p": "bestvideo[ext=mp4][height<=1440]+bestaudio[ext=m4a]/best[height<=1440]",
+        "2160p": "bestvideo[ext=mp4][height<=2160]+bestaudio[ext=m4a]/best[height<=2160]",
     }
+    
     selected_format = format_map.get(quality.lower(), "best")
 
     def progress_hook(d):
@@ -52,14 +53,19 @@ def download_video_task(url, quality, download_id, cookie_path=None):
 
     ydl_opts = {
         "format": selected_format,
-        "merge_output_format": "mp4",
+        "merge_output_format": "mp4",  
         "outtmpl": base_filename + ".%(ext)s",
         "progress_hooks": [progress_hook],
         "quiet": True,
+        "postprocessors": [{
+            "key": "FFmpegVideoConvertor",
+            "preferedformat": "mp4"
+        }],
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
         },
     }
+
 
     if cookie_path:
         ydl_opts["cookiefile"] = cookie_path
