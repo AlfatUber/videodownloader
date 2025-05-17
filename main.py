@@ -137,7 +137,7 @@ def delete_old_files():
                 deleted.append(os.path.basename(f))
     return {"deleted_files": deleted}
 
-@app.delete("/delete_all")
+@app.get("/delete_all")
 def delete_all_files():
     deleted = []
     for f in glob.glob("/tmp/*.mp4"):
