@@ -7,12 +7,13 @@ import os
 import uuid
 import shutil
 import glob
+import time
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -21,22 +22,22 @@ app.add_middleware(
 download_status = {}
 download_files = {}
 
-def download_video_task(url, quality, download_id, cookie_path=None):
-    base_filename = f"/tmp/{download_id}"
+# Format map corrigé
+format_map = {
+    "audio": "bestaudio[ext=m4a]/bestaudio",
+    "video": "bestvideo[ext=mp4]/bestvideo",
+    "audio+video": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best",
+    "360p": "bestvideo[ext=mp4][height<=360]+bestaudio[ext=m4a]/best[height<=360]",
+    "480p": "bestvideo[ext=mp4][height<=480]+bestaudio[ext=m4a]/best[height<=480]",
+    "720p": "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[height<=720]",
+    "1080p": "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[height<=1080]",
+    "1440p": "bestvideo[ext=mp4][height<=1440]+bestaudio[ext=m4a]/best[height<=1440]",
+    "2160p": "bestvideo[ext=mp4][height<=2160]+bestaudio[ext=m4a]/best[height<=2160]",
+}
 
-    format_map = {
-        "audio": "bestaudio[ext=m4a]/bestaudio",
-        "video": "bestvideo[ext=mp4]/bestvideo",
-        "audio+video": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best",
-        "360p": "bestvideo[ext=mp4][height<=360]+bestaudio[ext=m4a]/best[height<=360]",
-        "480p": "bestvideo[ext=mp4][height<=480]+bestaudio[ext=m4a]/best[height<=480]",
-        "720p": "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[height<=720]",
-        "1080p": "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[height<=1080]",
-        "1440p": "bestvideo[ext=mp4][height<=1440]+bestaudio[ext=m4a]/best[height<=1440]",
-        "2160p": "bestvideo[ext=mp4][height<=2160]+bestaudio[ext=m4a]/best[height<=2160]",
-    }
-    
-    selected_format = format_map.get(quality.lower(), "best")
+def download_video_task(url, quality, download_id, cookie_path=None):
+    filename = f"/tmp/{download_id}.mp4"
+    selected_format = format_map.get(quality.lower(), "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best")
 
     def progress_hook(d):
         if d["status"] == "downloading":
@@ -53,31 +54,24 @@ def download_video_task(url, quality, download_id, cookie_path=None):
 
     ydl_opts = {
         "format": selected_format,
-        "merge_output_format": "mp4",  
-        "outtmpl": base_filename + ".%(ext)s",
+        "merge_output_format": "mp4",
+        "outtmpl": filename,
         "progress_hooks": [progress_hook],
         "quiet": True,
-        "postprocessors": [{
-            "key": "FFmpegVideoConvertor",
-            "preferedformat": "mp4"
-        }],
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
         },
     }
-
 
     if cookie_path:
         ydl_opts["cookiefile"] = cookie_path
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(url, download=True)
-            final_path = ydl.prepare_filename(info_dict)
-            download_files[download_id] = final_path
+            ydl.download([url])
+        download_files[download_id] = filename
     except Exception as e:
         download_status[download_id] = {"progress": 0, "status": f"Error: {str(e)}"}
-        # Ne supprime pas le fichier vidéo
     finally:
         if cookie_path and os.path.exists(cookie_path):
             os.remove(cookie_path)
@@ -115,13 +109,42 @@ def get_file(id: str = Query(...)):
     matches = glob.glob(f"/tmp/{id}.*")
     if matches:
         file_path = matches[0]
-        return FileResponse(
-            path=file_path,
-            filename=os.path.basename(file_path),
-            media_type="video/mp4"
-        )
+        return FileResponse(path=file_path, filename=os.path.basename(file_path), media_type="video/mp4")
     else:
         raise HTTPException(status_code=404, detail="File not found")
+
+@app.get("/list")
+def list_downloads():
+    files = glob.glob("/tmp/*.mp4")
+    file_info = []
+    for f in files:
+        file_info.append({
+            "filename": os.path.basename(f),
+            "size_MB": round(os.path.getsize(f) / 1024 / 1024, 2),
+            "created": time.ctime(os.path.getctime(f))
+        })
+    return file_info
+
+@app.delete("/delete")
+def delete_old_files():
+    now = time.time()
+    deleted = []
+    for f in glob.glob("/tmp/*.mp4"):
+        if os.path.isfile(f):
+            age = now - os.path.getctime(f)
+            if age > 3600:  # 1 hour
+                os.remove(f)
+                deleted.append(os.path.basename(f))
+    return {"deleted_files": deleted}
+
+@app.delete("/delete_all")
+def delete_all_files():
+    deleted = []
+    for f in glob.glob("/tmp/*.mp4"):
+        if os.path.isfile(f):
+            os.remove(f)
+            deleted.append(os.path.basename(f))
+    return {"deleted_files": deleted}
 
 @app.get("/")
 def home():
