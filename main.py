@@ -6,6 +6,7 @@ import yt_dlp
 import os
 import uuid
 import shutil
+import glob
 
 app = FastAPI()
 
@@ -21,7 +22,7 @@ download_status = {}
 download_files = {}   
 
 def download_video_task(url, quality, download_id, cookie_path=None):
-    filename = f"/tmp/{download_id}.mp4"
+    filename = f"/tmp/{download_id}"
 
     format_map = {
         "audio": "bestaudio",
@@ -52,7 +53,7 @@ def download_video_task(url, quality, download_id, cookie_path=None):
     ydl_opts = {
         "format": selected_format,
         "merge_output_format": "mp4",
-        "outtmpl": filename,
+        "outtmpl": filename + ".%(ext)s",  
         "progress_hooks": [progress_hook],
         "quiet": True,
         "http_headers": {
@@ -65,15 +66,14 @@ def download_video_task(url, quality, download_id, cookie_path=None):
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-        download_files[download_id] = filename
+            info_dict = ydl.extract_info(url, download=True)
+            actual_filename = ydl.prepare_filename(info_dict)
+            download_files[download_id] = actual_filename
     except Exception as e:
         download_status[download_id] = {"progress": 0, "status": f"Error: {str(e)}"}
-        if os.path.exists(filename):
-            os.remove(filename)
     finally:
         if cookie_path and os.path.exists(cookie_path):
-            os.remove(cookie_path)
+            os.remove(cookie_path)  
 
 @app.post("/download")
 async def download(
