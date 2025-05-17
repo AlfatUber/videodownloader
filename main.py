@@ -1,5 +1,5 @@
 import uvicorn
-from fastapi import FastAPI, Query, UploadFile, File, HTTPException
+from fastapi import FastAPI, Query, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import yt_dlp
@@ -35,6 +35,7 @@ async def download(
     quality: str = Query("best"),
     id: str = Query(None),
     cookiefile: UploadFile = File(None),
+    background_tasks: BackgroundTasks = None,
 ):
     download_id = id or str(uuid.uuid4())
     filename = f"/tmp/{download_id}.mp4"
@@ -78,7 +79,7 @@ async def download(
         "outtmpl": filename,
         "progress_hooks": [progress_hook],
         "quiet": True,
-         "http_headers": {
+        "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
         }
     }
@@ -89,14 +90,17 @@ async def download(
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
+
+        if background_tasks:
+            background_tasks.add_task(os.remove, filename)
+            if cookie_path:
+                background_tasks.add_task(os.remove, cookie_path)
+            background_tasks.add_task(download_status.pop, download_id, None)
+
         return FileResponse(path=filename, filename="video.mp4", media_type="video/mp4")
-    finally:
-        if os.path.exists(filename):
-            os.remove(filename)
-        if cookie_path and os.path.exists(cookie_path):
-            os.remove(cookie_path)
-        if download_id in download_status:
-            del download_status[download_id]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=5000, reload=True)
