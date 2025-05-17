@@ -8,6 +8,7 @@ import uuid
 import shutil
 import glob
 import time
+import subprocess
 
 app = FastAPI()
 
@@ -22,7 +23,6 @@ app.add_middleware(
 download_status = {}
 download_files = {}
 
-# Format map corrigé
 format_map = {
     "audio": "bestaudio[ext=m4a]/bestaudio",
     "video": "bestvideo[ext=mp4]/bestvideo",
@@ -145,6 +145,21 @@ def delete_all_files():
             os.remove(f)
             deleted.append(os.path.basename(f))
     return {"deleted_files": deleted}
+
+@app.get("/supported_sites")
+def supported_sites():
+    try:
+        result = subprocess.run(
+            ["yt-dlp", "--list-extractors"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True
+        )
+        extractors = result.stdout.strip().split("\n")
+        return {"supported_sites": extractors}
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500, detail=f"Error listing extractors: {e.stderr}")
 
 @app.get("/")
 def home():
