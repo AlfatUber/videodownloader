@@ -1,3 +1,4 @@
+import uvicorn
 from fastapi import FastAPI, Query, BackgroundTasks, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -47,8 +48,16 @@ def download_video(url: str, format_str: str, download_id: str):
     except Exception as e:
         download_status[download_id] = {"progress": 0, "status": f"Error: {str(e)}"}
 
+@app.get("/")
+def home():
+    return {"type": "success", "message": "Welcome on downloader API"}
+
 @app.get("/download")
-def start_download(url: str = Query(...), quality: str = Query("best"), background_tasks: BackgroundTasks = None):
+def start_download(
+    url: str = Query(...),
+    quality: str = Query("best"),
+    background_tasks: BackgroundTasks = None
+):
     format_map = {
         "audio": "bestaudio",
         "video": "bestvideo",
@@ -89,3 +98,6 @@ def delete_file(id: str = Query(...)):
         return {"message": "File deleted"}
     else:
         raise HTTPException(status_code=404, detail="File not found")
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="0.0.0.0", port=5000, reload=True)
