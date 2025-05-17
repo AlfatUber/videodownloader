@@ -12,31 +12,30 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-download_status = {}  
-download_files = {}   
+download_status = {}
+download_files = {}
 
 def download_video_task(url, quality, download_id, cookie_path=None):
     base_filename = f"/tmp/{download_id}"
-    output_template = base_filename + ".%(ext)s"
 
     format_map = {
         "audio": "bestaudio",
         "video": "bestvideo",
         "audio+video": "bestvideo+bestaudio/best",
-        "360p": "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360]",
-        "480p": "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480]",
-        "720p": "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]",
-        "1080p": "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]",
-        "1440p": "bestvideo[height<=1440][ext=mp4]+bestaudio[ext=m4a]/best[height<=1440]",
-        "2160p": "bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/best[height<=2160]",
+        "360p": "bestvideo[height<=360]+bestaudio/best[height<=360]",
+        "480p": "bestvideo[height<=480]+bestaudio/best[height<=480]",
+        "720p": "bestvideo[height<=720]+bestaudio/best[height<=720]",
+        "1080p": "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
+        "1440p": "bestvideo[height<=1440]+bestaudio/best[height<=1440]",
+        "2160p": "bestvideo[height<=2160]+bestaudio/best[height<=2160]",
     }
-    selected_format = format_map.get(quality.lower(), "bestvideo+bestaudio/best")
+    selected_format = format_map.get(quality.lower(), "best")
 
     def progress_hook(d):
         if d["status"] == "downloading":
@@ -53,15 +52,10 @@ def download_video_task(url, quality, download_id, cookie_path=None):
 
     ydl_opts = {
         "format": selected_format,
-        "outtmpl": output_template,
         "merge_output_format": "mp4",
+        "outtmpl": base_filename + ".%(ext)s",
         "progress_hooks": [progress_hook],
         "quiet": True,
-        "noplaylist": True,
-        "postprocessors": [{
-            "key": "FFmpegVideoConvertor",
-            "preferedformat": "mp4",
-        }],
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
         },
@@ -72,12 +66,12 @@ def download_video_task(url, quality, download_id, cookie_path=None):
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-        possible_files = glob.glob(f"{base_filename}.*")
-        if possible_files:
-            download_files[download_id] = possible_files[0]
+            info_dict = ydl.extract_info(url, download=True)
+            final_path = ydl.prepare_filename(info_dict)
+            download_files[download_id] = final_path
     except Exception as e:
         download_status[download_id] = {"progress": 0, "status": f"Error: {str(e)}"}
+        # Ne supprime pas le fichier vidéo
     finally:
         if cookie_path and os.path.exists(cookie_path):
             os.remove(cookie_path)
@@ -98,6 +92,7 @@ async def download(
             shutil.copyfileobj(cookiefile.file, f)
 
     download_status[download_id] = {"progress": 0, "status": "Queued"}
+
     background_tasks.add_task(download_video_task, url, quality, download_id, cookie_path)
 
     return {"download_id": download_id}
@@ -111,9 +106,14 @@ def progress(id: str = Query(...)):
 
 @app.get("/file")
 def get_file(id: str = Query(...)):
-    file_path = download_files.get(id)
-    if file_path and os.path.exists(file_path):
-        return FileResponse(path=file_path, filename=os.path.basename(file_path), media_type="video/mp4")
+    matches = glob.glob(f"/tmp/{id}.*")
+    if matches:
+        file_path = matches[0]
+        return FileResponse(
+            path=file_path,
+            filename=os.path.basename(file_path),
+            media_type="video/mp4"
+        )
     else:
         raise HTTPException(status_code=404, detail="File not found")
 
