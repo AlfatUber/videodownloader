@@ -6,6 +6,10 @@ import uuid
 app = Flask(__name__)
 download_status = {}
 
+@app.get("/")
+def home():
+    return {"type": "success", "message": "Welcome on downloader API"}
+
 @app.get('/progress')
 def get_progress():
     download_id = request.args.get('id')
