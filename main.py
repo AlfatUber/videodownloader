@@ -105,10 +105,11 @@ def progress(id: str = Query(...)):
 
 @app.get("/file")
 def get_file(id: str = Query(...)):
-    filepath = download_files.get(id)
-    if not filepath or not os.path.exists(filepath):
-        raise HTTPException(status_code=404, detail="File not found or not ready")
-    return FileResponse(filepath, filename="video.mp4", media_type="video/mp4")
+    filename = f"/tmp/{id}.mp4"
+    if os.path.exists(filename):
+        return FileResponse(path=filename, filename="video.mp4", media_type="video/mp4")
+    else:
+        raise HTTPException(status_code=404, detail="File not found")
 
 @app.get("/")
 def home():
