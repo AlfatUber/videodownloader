@@ -107,7 +107,14 @@ def progress(id: str = Query(...)):
 def get_file(id: str = Query(...)):
     filename = f"/tmp/{id}.mp4"
     if os.path.exists(filename):
-        return FileResponse(path=filename, filename="video.mp4", media_type="video/mp4")
+        def iterfile():
+            with open(filename, mode="rb") as file_like:
+                yield from file_like
+            os.remove(filename)  
+
+        return StreamingResponse(iterfile(), media_type="video/mp4", headers={
+            "Content-Disposition": f'attachment; filename="video_{id}.mp4"'
+        })
     else:
         raise HTTPException(status_code=404, detail="File not found")
 
