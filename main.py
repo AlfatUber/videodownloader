@@ -125,14 +125,14 @@ def list_downloads():
         })
     return file_info
 
-@app.delete("/delete")
+@app.get("/delete")
 def delete_old_files():
     now = time.time()
     deleted = []
     for f in glob.glob("/tmp/*.mp4"):
         if os.path.isfile(f):
             age = now - os.path.getctime(f)
-            if age > 3600:  # 1 hour
+            if age > 3600:  
                 os.remove(f)
                 deleted.append(os.path.basename(f))
     return {"deleted_files": deleted}
