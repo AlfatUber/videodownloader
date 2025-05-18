@@ -125,17 +125,15 @@ def list_downloads():
         })
     return file_info
 
-@app.get("/delete")
-def delete_old_files():
-    now = time.time()
-    deleted = []
-    for f in glob.glob("/tmp/*.mp4"):
-        if os.path.isfile(f):
-            age = now - os.path.getctime(f)
-            if age > 3600:  
-                os.remove(f)
-                deleted.append(os.path.basename(f))
-    return {"deleted_files": deleted}
+@app.get("/delete/{filename}")
+def delete(filename: str):
+    matches = glob.glob(f"/tmp/{filename}")
+    if matches:
+        file_path = matches[0]
+        os.remove(file_path)
+        return {"type": "success", "message": f"File '{filename}' deleted."}
+    else:
+        raise HTTPException(status_code=404, detail="File not found")
 
 @app.get("/delete_all")
 def delete_all_files():
