@@ -58,6 +58,10 @@ def download_video_task(url, quality, download_id, cookie_path=None):
         "outtmpl": filename,
         "progress_hooks": [progress_hook],
         "quiet": True,
+        "postprocessors": [{
+            "key": "FFmpegMerger",
+            "preferedformat": "mp4"
+        }],
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
         },
