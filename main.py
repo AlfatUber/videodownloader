@@ -42,13 +42,10 @@ def download_video_task(url, quality, download_id, cookie_path=None):
     def progress_hook(d):
         if d["status"] == "downloading":
             percent_str = d.get("_percent_str", "0%").replace("%", "").strip()
-            try:
-                download_status[download_id] = {
-                    "progress": float(percent_str),
-                    "status": "Downloading...",
-                }
-            except Exception:
-                pass
+            download_status[download_id] = {
+                "progress": float(percent_str),
+                "status": "Downloading...",
+            }
         elif d["status"] == "finished":
             download_status[download_id] = {"progress": 100.0, "status": "Finished"}
 
@@ -58,13 +55,10 @@ def download_video_task(url, quality, download_id, cookie_path=None):
         "outtmpl": filename,
         "progress_hooks": [progress_hook],
         "quiet": True,
-        "postprocessors": [{
-            "key": "FFmpegMerger",
-            "preferredformat": "mp4"
-        }],
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
         },
+        "verbose": True,
     }
 
     if cookie_path:
@@ -72,7 +66,7 @@ def download_video_task(url, quality, download_id, cookie_path=None):
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+            ydl.extract_info(url, download=True)
         download_files[download_id] = filename
     except Exception as e:
         download_status[download_id] = {"progress": 0, "status": f"Error: {str(e)}"}
@@ -88,17 +82,20 @@ async def download(
     cookiefile: UploadFile = File(None),
 ):
     download_id = str(uuid.uuid4())
-
     cookie_path = None
+
     if cookiefile:
+        if not cookiefile.filename.endswith(".txt"):
+            raise HTTPException(status_code=400, detail="Le fichier cookie doit être un fichier .txt.")
+        contents = await cookiefile.read()
+        if len(contents) > 100 * 1024:
+            raise HTTPException(status_code=400, detail="Le fichier cookie est trop volumineux (max 100 Ko).")
         cookie_path = f"/tmp/{download_id}_cookies.txt"
         with open(cookie_path, "wb") as f:
-            shutil.copyfileobj(cookiefile.file, f)
+            f.write(contents)
 
     download_status[download_id] = {"progress": 0, "status": "Queued"}
-
     background_tasks.add_task(download_video_task, url, quality, download_id, cookie_path)
-
     return {"download_id": download_id}
 
 @app.get("/progress")
@@ -133,8 +130,7 @@ def list_downloads():
 def delete(filename: str):
     matches = glob.glob(f"/tmp/{filename}")
     if matches:
-        file_path = matches[0]
-        os.remove(file_path)
+        os.remove(matches[0])
         return {"type": "success", "message": f"File '{filename}' deleted."}
     else:
         raise HTTPException(status_code=404, detail="File not found")
@@ -161,7 +157,7 @@ def supported_sites():
         extractors = result.stdout.strip().split("\n")
         return {"supported_sites": extractors}
     except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500, detail=f"Error listing extractors: {e.stderr}")
+        raise HTTPException(status_code=500, detail=f"Erreur lors du listing : {e.stderr}")
 
 @app.get("/")
 def home():
