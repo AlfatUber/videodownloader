@@ -159,6 +159,52 @@ def supported_sites():
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Erreur lors du listing : {e.stderr}")
 
+@app.get("/get_data")
+async def get_video_data(url: str = Query(...), cookiefile: UploadFile = File(None)):
+    cookie_path = None
+    if cookiefile:
+        if not cookiefile.filename.endswith(".txt"):
+            raise HTTPException(status_code=400, detail="Le fichier cookie doit être un fichier .txt.")
+        contents = await cookiefile.read()
+        if len(contents) > 100 * 1024:
+            raise HTTPException(status_code=400, detail="Le fichier cookie est trop volumineux (max 100 Ko).")
+        cookie_path = f"/tmp/{uuid.uuid4()}_cookies.txt"
+        with open(cookie_path, "wb") as f:
+            f.write(contents)
+
+    ydl_opts = {
+        "quiet": True,
+        "skip_download": True,
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0"
+        },
+    }
+
+    if cookie_path:
+        ydl_opts["cookiefile"] = cookie_path
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            return {
+                "id": info.get("id"),
+                "title": info.get("title"),
+                "description": info.get("description"),
+                "duration": info.get("duration"),
+                "uploader": info.get("uploader"),
+                "upload_date": info.get("upload_date"),
+                "thumbnail": info.get("thumbnail"),
+                "view_count": info.get("view_count"),
+                "like_count": info.get("like_count"),
+                "formats": [f.get("format") for f in info.get("formats", [])],
+                "webpage_url": info.get("webpage_url"),
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur lors de l'extraction : {str(e)}")
+    finally:
+        if cookie_path and os.path.exists(cookie_path):
+            os.remove(cookie_path)
+
 @app.get("/")
 def home():
     return {"message": "API is running"}
