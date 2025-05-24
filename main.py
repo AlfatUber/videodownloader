@@ -159,7 +159,7 @@ def supported_sites():
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Erreur lors du listing : {e.stderr}")
 
-@app.get("/get_data")
+@app.post("/get_data")
 async def get_video_data(url: str = Query(...), cookiefile: UploadFile = File(None)):
     cookie_path = None
     if cookiefile:
