@@ -201,6 +201,7 @@ async def get_video_data(url: str = Query(...), cookiefile: UploadFile = File(No
                 "uploader": info.get("uploader"),
                 "upload_date": info.get("upload_date"),
                 "thumbnail": info.get("thumbnail"),
+                "thumbnails": info.get("thumbnails"),
                 "view_count": info.get("view_count"),
                 "like_count": info.get("like_count"),
                 "formats": [f.get("format") for f in info.get("formats", [])],
