@@ -159,9 +159,16 @@ def supported_sites():
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Erreur lors du listing : {e.stderr}")
 
+from fastapi import FastAPI, UploadFile, File, Query, HTTPException
+import os, uuid
+import yt_dlp
+
+app = FastAPI()
+
 @app.post("/get_data")
 async def get_video_data(url: str = Query(...), cookiefile: UploadFile = File(None)):
     cookie_path = None
+
     if cookiefile:
         if not cookiefile.filename.endswith(".txt"):
             raise HTTPException(status_code=400, detail="Le fichier cookie doit être un fichier .txt.")
@@ -179,13 +186,19 @@ async def get_video_data(url: str = Query(...), cookiefile: UploadFile = File(No
             "User-Agent": "Mozilla/5.0"
         },
     }
-
     if cookie_path:
         ydl_opts["cookiefile"] = cookie_path
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
+
+            preview_url = next(
+                (thumb.get("url") for thumb in info.get("thumbnails", []) 
+                 if "webp" in thumb.get("url", "") or "preview" in thumb.get("id", "")),
+                info.get("thumbnail")
+            )
+
             return {
                 "id": info.get("id"),
                 "title": info.get("title"),
@@ -198,9 +211,12 @@ async def get_video_data(url: str = Query(...), cookiefile: UploadFile = File(No
                 "like_count": info.get("like_count"),
                 "formats": [f.get("format") for f in info.get("formats", [])],
                 "webpage_url": info.get("webpage_url"),
+                "preview": preview_url
             }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur lors de l'extraction : {str(e)}")
+
     finally:
         if cookie_path and os.path.exists(cookie_path):
             os.remove(cookie_path)
