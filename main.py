@@ -159,12 +159,6 @@ def supported_sites():
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Erreur lors du listing : {e.stderr}")
 
-from fastapi import FastAPI, UploadFile, File, Query, HTTPException
-import os, uuid
-import yt_dlp
-
-app = FastAPI()
-
 @app.post("/get_data")
 async def get_video_data(url: str = Query(...), cookiefile: UploadFile = File(None)):
     cookie_path = None
